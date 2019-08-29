@@ -109,6 +109,71 @@ Here is the flow for S3 service:
     * S3 server will connect with the backend and do the required operations
     
 
+### Integrate YIG Ceph pool as a storage backend into DataStorageEngine
+
+#### Motivation
+Refactor DataStorageEngine and provide a uniform framework to add a storage backend easily and integrate the existing Yig Ceph pool as a new storage backend.
+
+#### Goal of DataStorageEngine
+The DataStorageEngine will only perform one thing that it ***only*** provides I/O function to upper layer and mananges all kinds of different storage backends.
+
+#### Terms
+* StorageDriver: equal to original storage backend and performs I/O function for specific storage backend
+
+#### Components of DataStorageEngine
+Below are the components for DataStorageEngine.
+* DriverFactoryMgr: responsible for getting a correct driver factory which can create the StorageDriver
+* DriverFactory: responsible for create the specific StorageDriver
+* StorageDriver: the interface to abstract all I/O functions for a stroage backend It defines all the interface which can be called by upper layer
+
+#### Steps to add a driver for a new storage backend
+1. implement StorageDriver for the storage backend
+2. implement DriverFactory for the new driver
+3. register the new driver factory into DriverFactoryMgr, he can register the new driver factory in init() function under the module
+4. import the new storage backend module into the init.go file under DataStorageEngine module
+
+#### The storage driver for YIG storage backend
+Because there can be many instances of YIG storage backend, each one will serve for the related ***endpoint***. Each storage backend will have a working storage driver, so there is ***only*** one driver for each endpoint, this means that for mulitple requests from user to the same endpoint, there will be the ***same*** storage driver which handles it.
+
+#### How YIG regsiters as a storage backend for a specific endpoint
+When storage driver of YIG starts, it will get the configuration from a file. Currently, each config file will contains a section for ***endpoint information***, and the driver factory will create the storage driver from it and relate the driver to the endpoint. 
+To simply the initial process of YIG storage driver, currently, the driver factory of YIG will monitor the changes of the specific folder which contains the configuation file, if a configuration for a new endpoint is added, the driver factory will create one new driver and relate it to the newly added endpoint. Then, the newly created driver can serve for requests to the new endpoint.
+
+#### Configuration for YIG storage driver
+Toml is used by the configuration for YIG storage driver.
+Below are the sections for the configuration of storage driver:
+```
+# this section contains endpoint information
+[endpoint]
+url="xxx"
+
+# this section should be according to the common log module
+[log]
+log_path="/var/log/yig"
+log_level=
+
+# this section define the redis access info, and should be according to common cache module.
+[cache]
+# the redis mode we use: 0 for normal client, 1 for cluster, 2 for sentinel.
+redis_mode = 0 
+# for cluster nodes or sentinel nodes.
+redis_nodes = "192.168.1.1:6379, 192.168.1.2:6379"
+# the master name of the sentinel.
+redis_master_name = "master"
+redis_connect_timeout = 1 
+redis_read_timeout = 1 
+redis_write_timeout = 1 
+redis_keepalive = 60
+redis_pool_max_idle = 3 
+redis_pool_idle_timeout = 30
+
+# this section defines the database access info and should be according to the db layer
+[database]
+db_type=1
+db_url="root:@tcp(10.5.0.17:4000)/yig"
+db_password=""
+```
+
 ### Data model impact
 
 Gelato follows the database per service microservices architecture. This means that all the components will have their own database. Gelato microservices architecture currently provides the flexibility, per service, to have their own DB adapter and interact with the respective database for persistent storage.
